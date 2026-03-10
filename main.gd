@@ -84,38 +84,33 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed('ui_cancel'):
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		# Update cursor position
+		# Request async splat position query
 		if not event.pressed and camera.rotation_mode == FreeLookCamera.RotationMode.NONE:
-			var splat_pos := rasterizer.get_splat_position(event.position)
-			if splat_pos == Vector3.INF: return
-			camera.set_focused_position(splat_pos)
+			rasterizer.request_splat_position(event.position)
 
 func update_debug_info() -> void:
 	if not (rasterizer and rasterizer.context): return
-	var device := rasterizer.context.device
-	
+
 	### Update Total Duplicated Splats ###
-	if rasterizer.descriptors.has('histogram'): 
-		var num_splats := device.buffer_get_data(rasterizer.descriptors['histogram'].rid, 0, 4).decode_u32(0)
-		num_rendered_splats = add_number_separator(num_splats) + (' (buffer overflow!)' if num_splats > rasterizer.point_cloud.size * 10 else '')
-	
+	var num_splats := rasterizer.cached_num_rendered_splats
+	num_rendered_splats = add_number_separator(num_splats) + (' (buffer overflow!)' if num_splats > rasterizer.point_cloud.size * 10 else '')
+
 	### Update VRAM Used ###
-	var vram_bytes := device.get_memory_usage(RenderingDevice.MEMORY_TOTAL)
+	var vram_bytes := rasterizer.cached_vram_bytes
 	video_memory_used = '%.2f%s' % [vram_bytes * (1e-6 if vram_bytes < 1e9 else 1e-9), 'MB' if vram_bytes < 1e9 else 'GB']
-	
+
 	### Update Pipeline Timestamps ###
-	var timestamp_count := device.get_captured_timestamps_count()
 	var is_paused : bool = $PauseTimer.is_stopped() and should_allow_render_pause[0]
-	if timestamp_count > 0:
-		timings = PackedStringArray(); timings.resize(timestamp_count-1 + 1)
-		var previous_time := device.get_captured_timestamp_gpu_time(0)
-		var total_time_ms := (device.get_captured_timestamp_gpu_time(timestamp_count-1) - previous_time)*1e-6
-		for i in range(1, timestamp_count):
-			var timestamp_time := device.get_captured_timestamp_gpu_time(i)
-			var stage_time_ms := (timestamp_time - previous_time)*1e-6
+	var cached := rasterizer.cached_timings
+	if cached.size() > 0:
+		timings = PackedStringArray(); timings.resize(cached.size() + 1)
+		var total_time_ms := 0.0
+		for i in cached.size():
+			total_time_ms += cached[i]["time_ms"]
+		for i in cached.size():
+			var stage_time_ms : float = cached[i]["time_ms"]
 			var gpu_time_percentage_text := ('%5.2f%%' % (stage_time_ms/total_time_ms*1e2)) if not is_paused else 'paused'
-			timings[i-1] = '%-16s %.2fms (%s)' % [device.get_captured_timestamp_name(i) + ':', stage_time_ms, gpu_time_percentage_text]
-			previous_time = timestamp_time
+			timings[i] = '%-16s %.2fms (%s)' % [str(cached[i]["name"]) + ':', stage_time_ms, gpu_time_percentage_text]
 		timings[-1] = 'Total GPU Time:  %.2fms' % total_time_ms
 
 func init_rasterizer(ply_file_path : String) -> void:
@@ -142,13 +137,18 @@ func _process(delta: float) -> void:
 			_render_imgui()
 		camera.enable_camera_movement = not (ImGui.IsWindowHovered(ImGui.HoveredFlags_AnyWindow) or ImGui.IsAnyItemActive())
 		$LoadingBar.update_progress(float(rasterizer.num_splats_loaded[0]) / float(rasterizer.point_cloud.size))
+		# Check for async splat position query result
+		if rasterizer.last_splat_position != Vector3.INF and rasterizer._pending_splat_query == Vector2i(-1, -1):
+			var pos := rasterizer.last_splat_position
+			rasterizer.last_splat_position = Vector3.INF
+			camera.set_focused_position(pos)
 	
 	var has_camera_updated := rasterizer.update_camera_matrices()
 	if not rasterizer.is_loaded or has_camera_updated: 
 		$PauseTimer.start()
 		
 	var is_paused : bool = $PauseTimer.is_stopped() and should_allow_render_pause[0]
-	Engine.max_fps = 30 if is_paused else 0
+	Engine.max_fps = 30 if is_paused else 144
 	if not is_paused: RenderingServer.call_on_render_thread(rasterizer.rasterize)
 
 func _notification(what):

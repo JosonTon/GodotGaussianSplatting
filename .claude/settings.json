@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "gdscript@claude-code-gdscript": true
+  }
+}

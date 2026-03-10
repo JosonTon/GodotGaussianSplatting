@@ -1,10 +1,10 @@
-[gd_scene load_steps=11 format=3 uid="uid://dx4r13gqfh13"]
+[gd_scene format=3 uid="uid://dx4r13gqfh13"]
 
-[ext_resource type="Script" path="res://main.gd" id="1_skarq"]
-[ext_resource type="Shader" path="res://resources/shaders/spatial/main.gdshader" id="3_jj7ax"]
-[ext_resource type="Script" path="res://util/camera.gd" id="3_rvimx"]
-[ext_resource type="Script" path="res://util/cursor.gd" id="4_gf8y8"]
-[ext_resource type="Script" path="res://util/loading_bar.gd" id="5_35jmb"]
+[ext_resource type="Script" uid="uid://c7167vdpw23xf" path="res://main.gd" id="1_skarq"]
+[ext_resource type="Shader" uid="uid://b2cl08kksibaf" path="res://resources/shaders/spatial/main.gdshader" id="3_jj7ax"]
+[ext_resource type="Script" uid="uid://j6s5a3011k5q" path="res://util/camera.gd" id="3_rvimx"]
+[ext_resource type="Script" uid="uid://caju1sfwuoodb" path="res://util/cursor.gd" id="4_gf8y8"]
+[ext_resource type="Script" uid="uid://2isgucjjd5fa" path="res://util/loading_bar.gd" id="5_35jmb"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_n8l1u"]
 radius = 0.025
@@ -23,21 +23,21 @@ grow_amount = 0.1
 flip_faces = true
 size = Vector2(2, 2)
 
-[sub_resource type="Texture2DRD" id="Texture2DRD_wex41"]
+[sub_resource type="Texture2DRD" id="Texture2DRD_lquwl"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_may5e"]
 render_priority = 0
 shader = ExtResource("3_jj7ax")
-shader_parameter/render_texture = SubResource("Texture2DRD_wex41")
+shader_parameter/render_texture = SubResource("Texture2DRD_lquwl")
 
-[node name="Main" type="Node"]
+[node name="Main" type="Node" unique_id=1068585326]
 script = ExtResource("1_skarq")
 
-[node name="Camera" type="Camera3D" parent="."]
+[node name="Camera" type="Camera3D" parent="." unique_id=2113887243]
 current = true
 script = ExtResource("3_rvimx")
 
-[node name="Cursor" type="MeshInstance3D" parent="Camera"]
+[node name="Cursor" type="MeshInstance3D" parent="Camera" unique_id=1175999441]
 top_level = true
 cast_shadow = 0
 mesh = SubResource("CapsuleMesh_n8l1u")
@@ -45,15 +45,15 @@ skeleton = NodePath("../..")
 surface_material_override/0 = SubResource("StandardMaterial3D_s7rbn")
 script = ExtResource("4_gf8y8")
 
-[node name="OrbitSwapTimer" type="Timer" parent="Camera"]
+[node name="OrbitSwapTimer" type="Timer" parent="Camera" unique_id=1327137491]
 editor_description = "Determines when, after holding the orbit modifier, should the camera switch to orbit rotation mode."
 wait_time = 0.135
 one_shot = true
 
-[node name="Target" type="Node3D" parent="Camera"]
+[node name="Target" type="Node3D" parent="Camera" unique_id=1923137744]
 top_level = true
 
-[node name="RenderedImage" type="MeshInstance3D" parent="."]
+[node name="RenderedImage" type="MeshInstance3D" parent="." unique_id=420431530]
 cast_shadow = 0
 extra_cull_margin = 16384.0
 gi_mode = 0
@@ -61,16 +61,16 @@ mesh = SubResource("QuadMesh_ugp31")
 surface_material_override/0 = SubResource("ShaderMaterial_may5e")
 metadata/_edit_lock_ = true
 
-[node name="PauseTimer" type="Timer" parent="."]
+[node name="PauseTimer" type="Timer" parent="." unique_id=1793628507]
 editor_description = "Determines when, after no camera movement, should rendering pause to save on resources."
 wait_time = 2.0
 one_shot = true
 
-[node name="UpdateDebugTimer" type="Timer" parent="."]
+[node name="UpdateDebugTimer" type="Timer" parent="." unique_id=1613784783]
 wait_time = 0.1
 autostart = true
 
-[node name="LoadingBar" type="ColorRect" parent="."]
+[node name="LoadingBar" type="ColorRect" parent="." unique_id=1975158749]
 offset_right = 2560.0
 offset_bottom = 5.0
 color = Color(1, 1, 1, 0)

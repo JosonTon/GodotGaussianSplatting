@@ -56,6 +56,19 @@ var should_terminate_thread : Array[bool] = [false]
 var num_splats_loaded : Array[int] = [0]
 var basis_override := Basis.IDENTITY
 
+# Shared CPU buffer for splat data (written by worker threads, uploaded to GPU on render thread)
+var _splat_cpu_data := PackedFloat32Array()
+var _splat_data_ready := false
+
+# Cached debug info (collected on render thread, read on main thread)
+var cached_num_rendered_splats : int = 0
+var cached_vram_bytes : int = 0
+var cached_timings : Array = [] # Array of {name: String, time_ms: float}
+
+# Async splat position query
+var _pending_splat_query := Vector2i(-1, -1)
+var last_splat_position := Vector3.INF
+
 func _init(point_cloud : PlyFile, output_texture_size : Vector2i, render_texture : Texture2DRD, camera : Camera3D) -> void:
 	self.point_cloud = point_cloud
 	self.texture_size = output_texture_size
@@ -111,7 +124,10 @@ func init_gpu() -> void:
 	# Begin loading splats asynchronously
 	should_terminate_thread[0] = false
 	num_splats_loaded[0] = 0
-	load_thread.start(PlyFile.load_gaussian_splats.bind(point_cloud, point_cloud.size / 1000, context.device, descriptors['splats'].rid, should_terminate_thread, num_splats_loaded, loaded.emit))
+	_splat_data_ready = false
+	_splat_cpu_data.resize(point_cloud.size * 60) # 60 floats per splat
+	_splat_cpu_data.fill(0)
+	load_thread.start(PlyFile.load_gaussian_splats.bind(point_cloud, point_cloud.size / 1000, _splat_cpu_data, should_terminate_thread, num_splats_loaded, _on_splat_load_complete))
 	
 func cleanup_gpu():
 	should_terminate_thread[0] = true
@@ -119,17 +135,28 @@ func cleanup_gpu():
 	if context: context.free()
 	if render_texture: render_texture.texture_rd_rid = RID()
 
+func _on_splat_load_complete():
+	_splat_data_ready = true
+
+func _upload_splat_data():
+	if not _splat_data_ready: return
+	_splat_data_ready = false
+	context.device.buffer_update(descriptors['splats'].rid, 0, _splat_cpu_data.size() * 4, _splat_cpu_data.to_byte_array())
+	_splat_cpu_data = PackedFloat32Array() # Free CPU memory
+	loaded.emit()
+
 func rasterize() -> void:
 	if not context: init_gpu()
-	
+
+	# Upload splat data if worker thread has finished
+	_upload_splat_data()
+
 	var camera_pos := basis_override * camera.global_position
 	context.device.buffer_update(descriptors['uniforms'].rid, 0, 8*4, RenderingContext.create_push_constant([-camera_pos.x, -camera_pos.y, camera_pos.z, model_scale[0], texture_size.x, texture_size.y, Time.get_ticks_msec()*1e-3]))
 	context.device.buffer_clear(descriptors['histogram'].rid, 0, 4 + 4*RADIX*4) # Clear the sort buffer size and reset global histogram
 	context.device.buffer_clear(descriptors['tile_bounds'].rid, 0, tile_dims.x*tile_dims.y * 2*4) # Clear gsplat_boundaries buffer
-	#context.device.buffer_update(descriptors['grid_dimensions'].rid, 0, 3*4*2, default_block_dims)
-	#context.device.texture_clear(descriptors['render_texture'].rid, Color.BLACK, 0, 1, 0, 1)
 	is_loaded = not load_thread.is_alive()
-	
+
 	# Run the projection pipeline. This will return how many duplicated points
 	# we will actually need to sort after culling.
 	context.device.capture_timestamp('Start')
@@ -137,7 +164,7 @@ func rasterize() -> void:
 	pipelines['gsplat_projection'].call(context, compute_list, camera_push_constants)
 	context.compute_list_end()
 	context.device.capture_timestamp('Projection')
-	
+
 	# Then, run the sort and gsplat_rasterize pipelines with block sizes based on the
 	# amount of points to sort determined in the projection pipeline.
 	compute_list = context.compute_list_begin()
@@ -148,27 +175,49 @@ func rasterize() -> void:
 		pipelines['radix_sort_downsweep'].call(context, compute_list, push_constant, [], descriptors['grid_dimensions'].rid, 0)
 	context.compute_list_end()
 	context.device.capture_timestamp('Sort')
-	
+
 	compute_list = context.compute_list_begin()
 	pipelines['gsplat_boundaries'].call(context, compute_list, [], [], descriptors['grid_dimensions'].rid, 3*4)
 	context.compute_list_end()
 	context.device.capture_timestamp('Boundaries')
-	
+
 	compute_list = context.compute_list_begin()
 	pipelines['gsplat_render'].call(context, compute_list, RenderingContext.create_push_constant([float(should_enable_heatmap[0]), -1]))
 	context.compute_list_end()
 	context.device.capture_timestamp('Render')
 
-func get_splat_position(screen_position : Vector2i) -> Vector3:
-	var tile : Vector2i = screen_position * render_scale[0] / TILE_SIZE
-	var tile_id := tile.y*tile_dims.x + tile.x
-	
-	var compute_list := context.compute_list_begin()
-	pipelines['gsplat_render'].call(context, compute_list, RenderingContext.create_push_constant([float(should_enable_heatmap[0]), tile_id]))
-	context.compute_list_end()
+	# Process pending splat position query (async)
+	if _pending_splat_query.x >= 0:
+		var tile : Vector2i = Vector2i(Vector2(_pending_splat_query) * render_scale[0]) / TILE_SIZE
+		var tile_id := tile.y*tile_dims.x + tile.x
+		compute_list = context.compute_list_begin()
+		pipelines['gsplat_render'].call(context, compute_list, RenderingContext.create_push_constant([float(should_enable_heatmap[0]), tile_id]))
+		context.compute_list_end()
+		var splat_data := context.device.buffer_get_data(descriptors['tile_splat_pos'].rid, 0, 4*4).to_float32_array()
+		last_splat_position = Vector3.INF if splat_data[3] == 0 else basis_override.inverse() * Vector3(-splat_data[0], -splat_data[1], splat_data[2])
+		_pending_splat_query = Vector2i(-1, -1)
 
-	var splat_data := context.device.buffer_get_data(descriptors['tile_splat_pos'].rid, 0, 4*4).to_float32_array()
-	return Vector3.INF if splat_data[3] == 0 else basis_override.inverse() * Vector3(-splat_data[0], -splat_data[1], splat_data[2])
+	# Collect debug info on render thread (cached for main thread to read)
+	_collect_debug_info()
+
+func request_splat_position(screen_position : Vector2i) -> void:
+	_pending_splat_query = screen_position
+
+func _collect_debug_info() -> void:
+	if descriptors.has('histogram'):
+		cached_num_rendered_splats = context.device.buffer_get_data(descriptors['histogram'].rid, 0, 4).decode_u32(0)
+	cached_vram_bytes = context.device.get_memory_usage(RenderingDevice.MEMORY_TOTAL)
+	var timestamp_count := context.device.get_captured_timestamps_count()
+	if timestamp_count > 0:
+		cached_timings.clear()
+		var previous_time := context.device.get_captured_timestamp_gpu_time(0)
+		for i in range(1, timestamp_count):
+			var timestamp_time := context.device.get_captured_timestamp_gpu_time(i)
+			cached_timings.append({
+				"name": context.device.get_captured_timestamp_name(i),
+				"time_ms": (timestamp_time - previous_time) * 1e-6
+			})
+			previous_time = timestamp_time
 
 ## Returns whether the view and projection matrices had changed since the last time this function
 ## was called.
