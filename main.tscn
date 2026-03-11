@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://j6s5a3011k5q" path="res://util/camera.gd" id="3_rvimx"]
 [ext_resource type="Script" uid="uid://caju1sfwuoodb" path="res://util/cursor.gd" id="4_gf8y8"]
 [ext_resource type="Script" uid="uid://2isgucjjd5fa" path="res://util/loading_bar.gd" id="5_35jmb"]
+[ext_resource type="Script" uid="uid://dlauorh4a0y5t" path="res://addons/gaussian-splatting/gaussian_splatting_settings_override.gd" id="6_7mycd"]
 [ext_resource type="Script" uid="uid://bqvoqb0gcx38r" path="res://addons/gaussian-splatting/gaussian_splatting.gd" id="6_gs"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_n8l1u"]
@@ -80,7 +81,13 @@ ply_path = "res://resources/demo.ply"
 metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
 
 [node name="GaussianSplatting2" type="Node3D" parent="." unique_id=320156665]
-transform = Transform3D(0.97027886, 0, -0.24198964, 0, 1, 0, 0.24198964, 0, 0.97027886, 0.24969101, 0.2706331, 1.9037123)
+transform = Transform3D(0.7600658, 0, 0.6498461, 0, 1, 0, -0.6498461, 0, 0.7600658, 2.523658, 0.2706331, 2.1204035)
 script = ExtResource("6_gs")
 ply_path = "res://resources/demo.ply"
 metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
+
+[node name="GaussianSplattingServerSettingsOverride" type="Node" parent="." unique_id=617038338]
+script = ExtResource("6_7mycd")
+render_scale = 0.73
+discard_alpha = 0.82
+metadata/_custom_type_script = "uid://dlauorh4a0y5t"

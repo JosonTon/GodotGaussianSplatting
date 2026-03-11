@@ -10,9 +10,20 @@ const PARTITION_DIVISION := 8
 const PARTITION_SIZE := PARTITION_DIVISION * WORKGROUP_SIZE
 
 ## Public properties
-var render_scale := 1
-var discard_alpha := 0.6
-var enable_heatmap := false
+var render_scale := 1.0:
+	set(v):
+		v = clampf(v, 0.0, 1.0)
+		if render_scale == v: return
+		render_scale = v
+		_needs_resize = true
+var discard_alpha := 0.6:
+	set(v):
+		discard_alpha = clampf(v, 0.0, 1.0)
+var enable_heatmap := false:
+	set(v):
+		if enable_heatmap == v: return
+		enable_heatmap = v
+		_force_redraw = true
 
 ## Internal state
 var _instances: Array = []
@@ -30,6 +41,7 @@ var _display_material: ShaderMaterial
 
 var _needs_rebuild := false
 var _needs_resize := false
+var _force_redraw := false
 var _texture_size := Vector2i.ONE
 var _tile_dims := Vector2i.ZERO
 var _prev_viewport_size := Vector2i.ZERO
@@ -73,6 +85,7 @@ func _ready() -> void:
 	_display_material.set_shader_parameter('FRAG_DISCARD_THRESHOLD', discard_alpha)
 
 	_display_quad.set_surface_override_material(0, _display_material)
+	_display_quad.visible = false
 	add_child(_display_quad)
 
 func register_instance(inst) -> void:
@@ -82,7 +95,11 @@ func register_instance(inst) -> void:
 
 func unregister_instance(inst) -> void:
 	_instances.erase(inst)
-	_needs_rebuild = true
+	if _instances.is_empty():
+		# All instances gone — tear down GPU state completely to avoid stale RIDs
+		_teardown_gpu()
+	else:
+		_needs_rebuild = true
 
 func request_splat_position(screen_position: Vector2i) -> void:
 	_pending_splat_query = screen_position
@@ -133,7 +150,8 @@ func _process(_delta: float) -> void:
 		_prev_instance_transforms = current_transforms
 		is_dirty = true
 
-	if is_dirty or any_loading or _needs_rebuild or _needs_resize or _pending_cleanup:
+	if is_dirty or any_loading or _needs_rebuild or _needs_resize or _pending_cleanup or _force_redraw:
+		_force_redraw = false
 		RenderingServer.call_on_render_thread(_rasterize)
 
 func _rasterize() -> void:
@@ -143,6 +161,9 @@ func _rasterize() -> void:
 		if _context:
 			_context.deletion_queue.flush(_context.device)
 			_context.shader_cache.clear()
+			# Prevent PREDELETE from double-flushing on GC
+			_context.deletion_queue.queue.clear()
+			_context = null
 		if _render_texture: _render_texture.texture_rd_rid = RID()
 		if _depth_texture: _depth_texture.texture_rd_rid = RID()
 		return
@@ -292,9 +313,12 @@ func _rebuild_gpu() -> void:
 			_total_splats += inst.point_cloud.size
 
 	if _total_splats == 0:
+		_display_quad.visible = false
 		_render_texture.texture_rd_rid = RID()
 		_depth_texture.texture_rd_rid = RID()
 		return
+
+	_display_quad.visible = true
 
 	# Allocate shared buffers (sized by _total_splats)
 	var num_sort_elements_max := _total_splats * 10
@@ -373,6 +397,11 @@ func _rebuild_gpu() -> void:
 	_pipelines['gsplat_boundaries'] = _context.create_pipeline([], [boundaries_set], _shaders['boundaries'])
 	_pipelines['gsplat_render'] = _context.create_pipeline([_tile_dims.x, _tile_dims.y, 1], [render_set], _shaders['render'])
 
+	# Create fresh Texture2DRD objects and bind to material (required after teardown)
+	_render_texture = Texture2DRD.new()
+	_depth_texture = Texture2DRD.new()
+	_display_material.set_shader_parameter('render_texture', _render_texture)
+	_display_material.set_shader_parameter('depth_texture', _depth_texture)
 	_render_texture.texture_rd_rid = _descriptors['render_texture'].rid
 	_depth_texture.texture_rd_rid = _descriptors['render_depth'].rid
 
@@ -433,6 +462,25 @@ func _collect_debug_info() -> void:
 				"time_ms": (timestamp_time - previous_time) * 1e-6
 			})
 			previous_time = timestamp_time
+
+func _teardown_gpu() -> void:
+	# Full GPU teardown — called when all instances are gone (e.g. scene switch)
+	_total_splats = 0
+	_instance_gpu_data.clear()
+	_shaders.clear()
+	_pipelines.clear()
+	_descriptors.clear()
+	_needs_rebuild = false
+	_needs_resize = false
+	_prev_viewport_size = Vector2i.ZERO
+	_display_quad.visible = false
+	if _render_texture: _render_texture.texture_rd_rid = RID()
+	if _depth_texture: _depth_texture.texture_rd_rid = RID()
+	if _context:
+		# Defer GPU resource freeing to render thread via _pending_cleanup
+		# Do NOT set _context = null here — that would trigger GC PREDELETE
+		# which flushes the deletion queue on the main thread (wrong thread!)
+		_pending_cleanup = true
 
 func _notification(what) -> void:
 	if what == NOTIFICATION_PREDELETE:
