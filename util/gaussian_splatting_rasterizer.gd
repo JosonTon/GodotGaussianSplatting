@@ -17,35 +17,45 @@ var descriptor_sets : Dictionary
 
 var point_cloud : PlyFile
 var render_texture : Texture2DRD
+var depth_texture : Texture2DRD
 var camera : Camera3D
 var camera_projection : Projection
 var camera_transform : Projection
 var camera_push_constants : PackedByteArray
 
 var tile_dims := Vector2i.ZERO
+var _needs_resize := false
 var texture_size : Vector2i :
 	set(value):
 		texture_size = (value * render_scale[0]).max(Vector2i.ONE)
 		tile_dims = (texture_size + Vector2i.ONE*(TILE_SIZE - 1)) / TILE_SIZE
-		if not descriptors.has('render_texture') or not context: return
-		# Rebuild gsplat_boundaries and gsplat_render pielines (since those depend on texture size)
+		if not descriptors.has('render_depth') or not context: return
 		render_texture = Texture2DRD.new() # FIXME: idk why I have to do this
-		context.deletion_queue.free_rid(context.device, descriptors['tile_bounds'].rid)
-		context.deletion_queue.free_rid(context.device, descriptors['render_texture'].rid)
-		
-		# FIXME: ERM MEMORY LEAK?!
-		#context.device.free_rid(pipelines['gsplat_boundaries'])
-		#context.device.free_rid(pipelines['gsplat_render'])
-		
-		descriptors['tile_bounds'] = context.create_storage_buffer(tile_dims.x*tile_dims.y * 2*4)
-		descriptors['render_texture'] = context.create_texture(texture_size, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT)
-		
-		var boundaries_set := context.create_descriptor_set([descriptors['histogram'], descriptors['sort_keys'], descriptors['tile_bounds']], shaders['boundaries'], 0)
-		var render_set := context.create_descriptor_set([descriptors['culled_splats'], descriptors['sort_values'], descriptors['tile_bounds'], descriptors['tile_splat_pos'], descriptors['render_texture']], shaders['render'], 0)
-		
-		pipelines['gsplat_boundaries'] = context.create_pipeline([], [boundaries_set], shaders['boundaries'])
-		pipelines['gsplat_render'] = context.create_pipeline([tile_dims.x, tile_dims.y, 1], [render_set], shaders['render'])
-		render_texture.texture_rd_rid = descriptors['render_texture'].rid
+		depth_texture = Texture2DRD.new()
+		_needs_resize = true
+
+## Rebuilds GPU resources after a texture_size change. Must be called on the render thread.
+func _resize_gpu_resources() -> void:
+	_needs_resize = false
+	context.deletion_queue.free_rid(context.device, descriptors['tile_bounds'].rid)
+	context.deletion_queue.free_rid(context.device, descriptors['render_texture'].rid)
+	context.deletion_queue.free_rid(context.device, descriptors['render_depth'].rid)
+
+	# FIXME: ERM MEMORY LEAK?!
+	#context.device.free_rid(pipelines['gsplat_boundaries'])
+	#context.device.free_rid(pipelines['gsplat_render'])
+
+	descriptors['tile_bounds'] = context.create_storage_buffer(tile_dims.x*tile_dims.y * 2*4)
+	descriptors['render_texture'] = context.create_texture(texture_size, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT)
+	descriptors['render_depth'] = context.create_texture(texture_size, RenderingDevice.DATA_FORMAT_R32_SFLOAT)
+
+	var boundaries_set := context.create_descriptor_set([descriptors['histogram'], descriptors['sort_keys'], descriptors['tile_bounds']], shaders['boundaries'], 0)
+	var render_set := context.create_descriptor_set([descriptors['culled_splats'], descriptors['sort_values'], descriptors['tile_bounds'], descriptors['tile_splat_pos'], descriptors['render_texture'], descriptors['splat_depths'], descriptors['render_depth']], shaders['render'], 0)
+
+	pipelines['gsplat_boundaries'] = context.create_pipeline([], [boundaries_set], shaders['boundaries'])
+	pipelines['gsplat_render'] = context.create_pipeline([tile_dims.x, tile_dims.y, 1], [render_set], shaders['render'])
+	render_texture.texture_rd_rid = descriptors['render_texture'].rid
+	depth_texture.texture_rd_rid = descriptors['render_depth'].rid
 
 var load_thread := Thread.new()
 var is_loaded := false
@@ -69,10 +79,11 @@ var cached_timings : Array = [] # Array of {name: String, time_ms: float}
 var _pending_splat_query := Vector2i(-1, -1)
 var last_splat_position := Vector3.INF
 
-func _init(point_cloud : PlyFile, output_texture_size : Vector2i, render_texture : Texture2DRD, camera : Camera3D) -> void:
+func _init(point_cloud : PlyFile, output_texture_size : Vector2i, render_texture : Texture2DRD, camera : Camera3D, depth_texture : Texture2DRD=null) -> void:
 	self.point_cloud = point_cloud
 	self.texture_size = output_texture_size
 	self.render_texture = render_texture
+	self.depth_texture = depth_texture
 	self.camera = camera
 
 func init_gpu() -> void:
@@ -103,15 +114,18 @@ func init_gpu() -> void:
 	descriptors['tile_bounds'] = context.create_storage_buffer(tile_dims.x*tile_dims.y * 2*4)
 	descriptors['tile_splat_pos'] = context.create_storage_buffer(4*4)
 	descriptors['render_texture'] = context.create_texture(texture_size, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT)
-	
-	var projection_set := context.create_descriptor_set([descriptors['splats'], descriptors['culled_splats'], descriptors['histogram'], descriptors['sort_keys'], descriptors['sort_values'], descriptors['grid_dimensions'], descriptors['uniforms']], projection_shader, 0)
+	descriptors['splat_depths'] = context.create_storage_buffer(point_cloud.size * 4)
+	descriptors['render_depth'] = context.create_texture(texture_size, RenderingDevice.DATA_FORMAT_R32_SFLOAT)
+
+	var projection_set := context.create_descriptor_set([descriptors['splats'], descriptors['culled_splats'], descriptors['histogram'], descriptors['sort_keys'], descriptors['sort_values'], descriptors['grid_dimensions'], descriptors['uniforms'], descriptors['splat_depths']], projection_shader, 0)
 	var radix_sort_upsweep_set := context.create_descriptor_set([descriptors['histogram'], descriptors['sort_keys']], radix_sort_upsweep_shader, 0)
 	var radix_sort_spine_set := context.create_descriptor_set([descriptors['histogram']], radix_sort_spine_shader, 0)
 	var radix_sort_downsweep_set := context.create_descriptor_set([descriptors['histogram'], descriptors['sort_keys'], descriptors['sort_values']], radix_sort_downsweep_shader, 0)
 	var boundaries_set := context.create_descriptor_set([descriptors['histogram'], descriptors['sort_keys'], descriptors['tile_bounds']], shaders['boundaries'], 0)
-	var render_set := context.create_descriptor_set([descriptors['culled_splats'], descriptors['sort_values'], descriptors['tile_bounds'], descriptors['tile_splat_pos'], descriptors['render_texture']], shaders['render'], 0)
-	
+	var render_set := context.create_descriptor_set([descriptors['culled_splats'], descriptors['sort_values'], descriptors['tile_bounds'], descriptors['tile_splat_pos'], descriptors['render_texture'], descriptors['splat_depths'], descriptors['render_depth']], shaders['render'], 0)
+
 	render_texture.texture_rd_rid = descriptors['render_texture'].rid
+	depth_texture.texture_rd_rid = descriptors['render_depth'].rid
 	
 	# --- COMPUTE PIPELINE CREATION ---
 	pipelines['gsplat_projection'] = context.create_pipeline([ceili(point_cloud.size/256.0), 1, 1], [projection_set], projection_shader)
@@ -134,6 +148,7 @@ func cleanup_gpu():
 	load_thread.wait_to_finish()
 	if context: context.free()
 	if render_texture: render_texture.texture_rd_rid = RID()
+	if depth_texture: depth_texture.texture_rd_rid = RID()
 
 func _on_splat_load_complete():
 	_splat_data_ready = true
@@ -147,6 +162,7 @@ func _upload_splat_data():
 
 func rasterize() -> void:
 	if not context: init_gpu()
+	if _needs_resize: _resize_gpu_resources()
 
 	# Upload splat data if worker thread has finished
 	_upload_splat_data()

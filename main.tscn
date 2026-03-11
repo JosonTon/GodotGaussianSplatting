@@ -25,10 +25,20 @@ size = Vector2(2, 2)
 
 [sub_resource type="Texture2DRD" id="Texture2DRD_lquwl"]
 
+[sub_resource type="Texture2DRD" id="Texture2DRD_7mycd"]
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_may5e"]
 render_priority = 0
 shader = ExtResource("3_jj7ax")
-shader_parameter/render_texture = SubResource("Texture2DRD_lquwl")
+shader_parameter/render_texture = SubResource("Texture2DRD_7mycd")
+shader_parameter/depth_texture = SubResource("Texture2DRD_lquwl")
+shader_parameter/FRAG_DISCARD_THRESHOLD = 0.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_272bh"]
+
+[sub_resource type="Environment" id="Environment_lquwl"]
+background_mode = 1
+background_color = Color(1, 1, 1, 1)
 
 [node name="Main" type="Node" unique_id=1068585326]
 script = ExtResource("1_skarq")
@@ -75,3 +85,13 @@ offset_right = 2560.0
 offset_bottom = 5.0
 color = Color(1, 1, 1, 0)
 script = ExtResource("5_35jmb")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1909664637]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5216696, -0.84085214, 3.0051405)
+mesh = SubResource("BoxMesh_272bh")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1681921368]
+transform = Transform3D(-0.6639523, 0, -0.747775, -0.546612, 0.68239397, 0.48533887, 0.51027715, 0.7309847, -0.45307705, 0, 0, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1890796000]
+environment = SubResource("Environment_lquwl")

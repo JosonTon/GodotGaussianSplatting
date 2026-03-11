@@ -2,6 +2,8 @@ shader_type spatial;
 render_mode unshaded, fog_disabled;
 
 uniform sampler2D render_texture : source_color, filter_linear_mipmap_anisotropic;
+uniform sampler2D depth_texture : filter_linear_mipmap_anisotropic;
+uniform float FRAG_DISCARD_THRESHOLD = 0.6;
 
 // Source: https://gamedev.stackexchange.com/a/148088
 vec3 srgb_to_linear(vec3 x) {
@@ -11,9 +13,12 @@ vec3 srgb_to_linear(vec3 x) {
 }
 
 void vertex() {
-	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
+	POSITION = vec4(VERTEX.xy, 0.0, 1.0);
 }
 
 void fragment() {
-	ALBEDO = srgb_to_linear(texture(render_texture, SCREEN_UV).rgb);
+	vec4 gs = texture(render_texture, SCREEN_UV);
+	if (gs.a < FRAG_DISCARD_THRESHOLD) discard;
+	ALBEDO = srgb_to_linear(gs.rgb);
+	DEPTH = texture(depth_texture, SCREEN_UV).r;
 }

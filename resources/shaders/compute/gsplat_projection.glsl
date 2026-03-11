@@ -79,6 +79,10 @@ layout (std140, set = 0, binding = 6) restrict uniform Uniforms {
 	float time;
 };
 
+layout (std430, set = 0, binding = 7) restrict writeonly buffer SplatDepthsBuffer {
+	float splat_depths[];
+};
+
 layout(push_constant) restrict readonly uniform PushConstants {
 	mat4 view_matrix;
 	mat4 projection_matrix;
@@ -204,6 +208,8 @@ void main() {
 	data.pos_xy = splat_pos.xy;
 	data.pos_z = splat_pos.z;
 	culled_buffer[id] = data;
+	// Convert from OpenGL NDC [-1,+1] to Godot reverse-Z depth [0,1] (1=near, 0=far)
+	splat_depths[id] = 0.5 - 0.5 * ndc_pos.z;
 	barrier();
 
 	// --- UPDATE SORT KERNEL DIMENSIONS ---

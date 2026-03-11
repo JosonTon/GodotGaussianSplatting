@@ -16,6 +16,7 @@ var video_memory_used := '0.00MB'
 var timings : PackedStringArray
 var should_render_imgui := true
 var should_allow_render_pause := [true]
+var frag_discard_threshold := [0.6]
 
 func _init() -> void:
 	DisplayServer.window_set_size(DisplayServer.screen_get_size() * 0.75)
@@ -50,6 +51,7 @@ func _render_imgui() -> void:
 	ImGui.Text('Enable Heatmap: '); ImGui.SameLine(); if ImGui.Checkbox('##heatmap_bool', rasterizer.should_enable_heatmap): rasterizer.is_loaded = false
 	ImGui.Text('Render Scale:   '); ImGui.SameLine(); if ImGui.SliderFloat('##render_scale_float', rasterizer.render_scale, 0.05, 1.5): reset_render_texture()
 	ImGui.Text('Model Scale:    '); ImGui.SameLine(); if ImGui.SliderFloat('##model_scale_float', rasterizer.model_scale, 0.25, 5.0): rasterizer.is_loaded = false
+	ImGui.Text('Discard Alpha:  '); ImGui.SameLine(); if ImGui.SliderFloat('##discard_float', frag_discard_threshold, 0.0, 1.0): material.set_shader_parameter('FRAG_DISCARD_THRESHOLD', frag_discard_threshold[0])
 	
 	ImGui.SeparatorText('Stage Timings')
 	for i in len(timings):
@@ -115,11 +117,13 @@ func update_debug_info() -> void:
 
 func init_rasterizer(ply_file_path : String) -> void:
 	if rasterizer: RenderingServer.call_on_render_thread(rasterizer.cleanup_gpu)
-	
+
 	var render_texture := Texture2DRD.new()
-	rasterizer = GaussianSplattingRasterizer.new(PlyFile.new(ply_file_path), viewport.size, render_texture, camera)
+	var depth_texture := Texture2DRD.new()
+	rasterizer = GaussianSplattingRasterizer.new(PlyFile.new(ply_file_path), viewport.size, render_texture, camera, depth_texture)
 	loaded_file = ply_file_path.get_file()
 	material.set_shader_parameter('render_texture', render_texture)
+	material.set_shader_parameter('depth_texture', depth_texture)
 	if not Engine.is_editor_hint():
 		camera.reset()
 		$LoadingBar.set_visibility(true)
@@ -130,6 +134,7 @@ func reset_render_texture() -> void:
 	rasterizer.is_loaded = false
 	rasterizer.texture_size = viewport.size
 	material.set_shader_parameter('render_texture', rasterizer.render_texture)
+	material.set_shader_parameter('depth_texture', rasterizer.depth_texture)
 
 func _process(delta: float) -> void:
 	if not Engine.is_editor_hint():
