@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c2cxbc0e4xvry"
+path="res://.godot/imported/gsplat_projection.glsl-b2d6a437806add95f6bf4535503d0610.res"
+
+[deps]
+
+source_file="res://addons/gaussian-splatting/shaders/compute/gsplat_projection.glsl"
+dest_files=["res://.godot/imported/gsplat_projection.glsl-b2d6a437806add95f6bf4535503d0610.res"]
+
+[params]
+

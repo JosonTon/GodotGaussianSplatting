@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b2kranfswqpgj"
+path="res://.godot/imported/gsplat_boundaries.glsl-174805af34d8138e02c56c50fb973a84.res"
+
+[deps]
+
+source_file="res://addons/gaussian-splatting/shaders/compute/gsplat_boundaries.glsl"
+dest_files=["res://.godot/imported/gsplat_boundaries.glsl-174805af34d8138e02c56c50fb973a84.res"]
+
+[params]
+

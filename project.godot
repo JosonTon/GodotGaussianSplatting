@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 ImGuiRoot="*uid://dugmpnsxaagba"
+GaussianSplattingServer="*uid://bj10mhmclilcc"
 
 [debug]
 
@@ -42,7 +43,7 @@ window/show_image=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/imgui-godot/plugin.cfg")
+enabled=PackedStringArray("res://addons/imgui-godot/plugin.cfg", "res://addons/gaussian-splatting/plugin.cfg")
 
 [input]
 

@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://dx4r13gqfh13"]
 
 [ext_resource type="Script" uid="uid://c7167vdpw23xf" path="res://main.gd" id="1_skarq"]
-[ext_resource type="Shader" uid="uid://b2cl08kksibaf" path="res://resources/shaders/spatial/main.gdshader" id="3_jj7ax"]
 [ext_resource type="Script" uid="uid://j6s5a3011k5q" path="res://util/camera.gd" id="3_rvimx"]
 [ext_resource type="Script" uid="uid://caju1sfwuoodb" path="res://util/cursor.gd" id="4_gf8y8"]
 [ext_resource type="Script" uid="uid://2isgucjjd5fa" path="res://util/loading_bar.gd" id="5_35jmb"]
+[ext_resource type="Script" uid="uid://bqvoqb0gcx38r" path="res://addons/gaussian-splatting/gaussian_splatting.gd" id="6_gs"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_n8l1u"]
 radius = 0.025
@@ -18,21 +18,6 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(1, 1, 1, 0)
 grow_amount = 0.1
-
-[sub_resource type="QuadMesh" id="QuadMesh_ugp31"]
-flip_faces = true
-size = Vector2(2, 2)
-
-[sub_resource type="Texture2DRD" id="Texture2DRD_lquwl"]
-
-[sub_resource type="Texture2DRD" id="Texture2DRD_7mycd"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_may5e"]
-render_priority = 0
-shader = ExtResource("3_jj7ax")
-shader_parameter/render_texture = SubResource("Texture2DRD_7mycd")
-shader_parameter/depth_texture = SubResource("Texture2DRD_lquwl")
-shader_parameter/FRAG_DISCARD_THRESHOLD = 0.6
 
 [sub_resource type="BoxMesh" id="BoxMesh_272bh"]
 
@@ -63,14 +48,6 @@ one_shot = true
 [node name="Target" type="Node3D" parent="Camera" unique_id=1923137744]
 top_level = true
 
-[node name="RenderedImage" type="MeshInstance3D" parent="." unique_id=420431530]
-cast_shadow = 0
-extra_cull_margin = 16384.0
-gi_mode = 0
-mesh = SubResource("QuadMesh_ugp31")
-surface_material_override/0 = SubResource("ShaderMaterial_may5e")
-metadata/_edit_lock_ = true
-
 [node name="PauseTimer" type="Timer" parent="." unique_id=1793628507]
 editor_description = "Determines when, after no camera movement, should rendering pause to save on resources."
 wait_time = 2.0
@@ -87,7 +64,7 @@ color = Color(1, 1, 1, 0)
 script = ExtResource("5_35jmb")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1909664637]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5216696, -0.84085214, 3.0051405)
+transform = Transform3D(1.9258661, 0, -0.8152612, 0, 2.0913181, 0, 0.8152612, 0, 1.9258661, 3.3377852, -0.84085214, 0.5826862)
 mesh = SubResource("BoxMesh_272bh")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1681921368]
@@ -95,3 +72,15 @@ transform = Transform3D(-0.6639523, 0, -0.747775, -0.546612, 0.68239397, 0.48533
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1890796000]
 environment = SubResource("Environment_lquwl")
+
+[node name="GaussianSplatting" type="Node3D" parent="." unique_id=603870375]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.9062009, 0, 0)
+script = ExtResource("6_gs")
+ply_path = "res://resources/demo.ply"
+metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
+
+[node name="GaussianSplatting2" type="Node3D" parent="." unique_id=320156665]
+transform = Transform3D(0.97027886, 0, -0.24198964, 0, 1, 0, 0.24198964, 0, 0.97027886, 0.24969101, 0.2706331, 1.9037123)
+script = ExtResource("6_gs")
+ply_path = "res://resources/demo.ply"
+metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
