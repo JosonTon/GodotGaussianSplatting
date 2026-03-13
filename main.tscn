@@ -65,7 +65,7 @@ color = Color(1, 1, 1, 0)
 script = ExtResource("5_35jmb")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1909664637]
-transform = Transform3D(1.9258661, 0, -0.8152612, 0, 2.0913181, 0, 0.8152612, 0, 1.9258661, 3.3377852, -0.84085214, 0.5826862)
+transform = Transform3D(1.9258661, 0, -0.8152612, 0, 2.0913181, 0, 0.8152612, 0, 1.9258661, 1.8694474, -0.84085214, 0.6243781)
 mesh = SubResource("BoxMesh_272bh")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1681921368]
@@ -81,13 +81,13 @@ ply_path = "res://resources/demo.ply"
 metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
 
 [node name="GaussianSplatting2" type="Node3D" parent="." unique_id=320156665]
-transform = Transform3D(0.7600658, 0, 0.6498461, 0, 1, 0, -0.6498461, 0, 0.7600658, 2.523658, 0.2706331, 2.1204035)
+transform = Transform3D(0.7600658, 0, 0.6498461, 0, 1, 0, -0.6498461, 0, 0.7600658, 2.221925, -0.23709273, 1.767494)
 script = ExtResource("6_gs")
 ply_path = "res://resources/demo.ply"
 metadata/_custom_type_script = "uid://bqvoqb0gcx38r"
 
 [node name="GaussianSplattingServerSettingsOverride" type="Node" parent="." unique_id=617038338]
 script = ExtResource("6_7mycd")
-render_scale = 0.73
+render_scale = 0.61
 discard_alpha = 0.82
 metadata/_custom_type_script = "uid://dlauorh4a0y5t"
