@@ -18,7 +18,11 @@ var render_scale := 1.0:
 		_needs_resize = true
 var discard_alpha := 0.6:
 	set(v):
-		discard_alpha = clampf(v, 0.0, 1.0)
+		v = clampf(v, 0.0, 1.0)
+		if discard_alpha == v: return
+		discard_alpha = v
+		if _display_material:
+			_display_material.set_shader_parameter('FRAG_DISCARD_THRESHOLD', discard_alpha)
 var enable_heatmap := false:
 	set(v):
 		if enable_heatmap == v: return
@@ -47,6 +51,7 @@ var _tile_dims := Vector2i.ZERO
 var _prev_viewport_size := Vector2i.ZERO
 
 # Cached debug info
+var debug_info_enabled := true
 var cached_num_rendered_splats: int = 0
 var cached_vram_bytes: int = 0
 var cached_timings: Array = []
@@ -78,10 +83,7 @@ func _ready() -> void:
 	_display_material = ShaderMaterial.new()
 	_display_material.shader = shader
 
-	_render_texture = Texture2DRD.new()
-	_depth_texture = Texture2DRD.new()
-	_display_material.set_shader_parameter('render_texture', _render_texture)
-	_display_material.set_shader_parameter('depth_texture', _depth_texture)
+	_bind_textures()
 	_display_material.set_shader_parameter('FRAG_DISCARD_THRESHOLD', discard_alpha)
 
 	_display_quad.set_surface_override_material(0, _display_material)
@@ -123,9 +125,6 @@ func _process(_delta: float) -> void:
 		_tile_dims = (_texture_size + Vector2i.ONE * (TILE_SIZE - 1)) / TILE_SIZE
 		_needs_resize = true
 
-	# Update discard alpha
-	_display_material.set_shader_parameter('FRAG_DISCARD_THRESHOLD', discard_alpha)
-
 	# Check if any instance is still loading or has new data
 	var any_loading := false
 	for inst in _instances:
@@ -143,11 +142,16 @@ func _process(_delta: float) -> void:
 		is_dirty = true
 
 	# Check instance transform changes
-	var current_transforms: Array = []
-	for inst in _instances:
-		current_transforms.append(inst.global_transform)
-	if current_transforms != _prev_instance_transforms:
-		_prev_instance_transforms = current_transforms
+	var transforms_changed := _prev_instance_transforms.size() != _instances.size()
+	if not transforms_changed:
+		for i in _instances.size():
+			if _instances[i].global_transform != _prev_instance_transforms[i]:
+				transforms_changed = true
+				break
+	if transforms_changed:
+		_prev_instance_transforms.resize(_instances.size())
+		for i in _instances.size():
+			_prev_instance_transforms[i] = _instances[i].global_transform
 		is_dirty = true
 
 	if is_dirty or any_loading or _needs_rebuild or _needs_resize or _pending_cleanup or _force_redraw:
@@ -164,8 +168,7 @@ func _rasterize() -> void:
 			# Prevent PREDELETE from double-flushing on GC
 			_context.deletion_queue.queue.clear()
 			_context = null
-		if _render_texture: _render_texture.texture_rd_rid = RID()
-		if _depth_texture: _depth_texture.texture_rd_rid = RID()
+		_detach_textures()
 		return
 
 	if not _context:
@@ -265,7 +268,8 @@ func _rasterize() -> void:
 		last_splat_position = Vector3.INF if splat_data[3] == 0 else Vector3(-splat_data[0], -splat_data[1], splat_data[2])
 		_pending_splat_query = Vector2i(-1, -1)
 
-	_collect_debug_info()
+	if debug_info_enabled:
+		_collect_debug_info()
 
 func _build_camera_push_constants(view: Projection, proj: Projection) -> PackedByteArray:
 	return RenderContextScript.create_push_constant([
@@ -314,8 +318,7 @@ func _rebuild_gpu() -> void:
 
 	if _total_splats == 0:
 		_display_quad.visible = false
-		_render_texture.texture_rd_rid = RID()
-		_depth_texture.texture_rd_rid = RID()
+		_detach_textures()
 		return
 
 	_display_quad.visible = true
@@ -398,10 +401,7 @@ func _rebuild_gpu() -> void:
 	_pipelines['gsplat_render'] = _context.create_pipeline([_tile_dims.x, _tile_dims.y, 1], [render_set], _shaders['render'])
 
 	# Create fresh Texture2DRD objects and bind to material (required after teardown)
-	_render_texture = Texture2DRD.new()
-	_depth_texture = Texture2DRD.new()
-	_display_material.set_shader_parameter('render_texture', _render_texture)
-	_display_material.set_shader_parameter('depth_texture', _depth_texture)
+	_bind_textures()
 	_render_texture.texture_rd_rid = _descriptors['render_texture'].rid
 	_depth_texture.texture_rd_rid = _descriptors['render_depth'].rid
 
@@ -417,10 +417,7 @@ func _resize_gpu() -> void:
 	if _total_splats == 0: return
 
 	# Need to create new Texture2DRD instances (Godot quirk)
-	_render_texture = Texture2DRD.new()
-	_depth_texture = Texture2DRD.new()
-	_display_material.set_shader_parameter('render_texture', _render_texture)
-	_display_material.set_shader_parameter('depth_texture', _depth_texture)
+	_bind_textures()
 
 	_context.deletion_queue.free_rid(_context.device, _descriptors['tile_bounds'].rid)
 	_context.deletion_queue.free_rid(_context.device, _descriptors['render_texture'].rid)
@@ -463,6 +460,16 @@ func _collect_debug_info() -> void:
 			})
 			previous_time = timestamp_time
 
+func _bind_textures() -> void:
+	_render_texture = Texture2DRD.new()
+	_depth_texture = Texture2DRD.new()
+	_display_material.set_shader_parameter('render_texture', _render_texture)
+	_display_material.set_shader_parameter('depth_texture', _depth_texture)
+
+func _detach_textures() -> void:
+	if _render_texture: _render_texture.texture_rd_rid = RID()
+	if _depth_texture: _depth_texture.texture_rd_rid = RID()
+
 func _teardown_gpu() -> void:
 	# Full GPU teardown — called when all instances are gone (e.g. scene switch)
 	_total_splats = 0
@@ -474,8 +481,7 @@ func _teardown_gpu() -> void:
 	_needs_resize = false
 	_prev_viewport_size = Vector2i.ZERO
 	_display_quad.visible = false
-	if _render_texture: _render_texture.texture_rd_rid = RID()
-	if _depth_texture: _depth_texture.texture_rd_rid = RID()
+	_detach_textures()
 	if _context:
 		# Defer GPU resource freeing to render thread via _pending_cleanup
 		# Do NOT set _context = null here — that would trigger GC PREDELETE
@@ -488,8 +494,7 @@ func _notification(what) -> void:
 		if _context:
 			_pending_cleanup = true
 			RenderingServer.call_on_render_thread(_cleanup_gpu)
-		if _render_texture: _render_texture.texture_rd_rid = RID()
-		if _depth_texture: _depth_texture.texture_rd_rid = RID()
+		_detach_textures()
 
 func _cleanup_gpu() -> void:
 	if _context:

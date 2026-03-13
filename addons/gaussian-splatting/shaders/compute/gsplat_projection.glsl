@@ -89,11 +89,6 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	mat4 projection_matrix;
 };
 
-float ease_out_cubic(in float x) {
-	float a = 1.0 - x;
-	return 1.0 - a*a*a;
-}
-
 /** Calculates the color from given spherical harmonic coefficients and view direction. */
 #define SH_COEFFICIENTS(x) (vec3(sh_coefficients[x*3], sh_coefficients[x*3+1], sh_coefficients[x*3+2]))
 vec3 get_color(in vec3 view_dir, in float sh_coefficients[16*3]) {
@@ -171,12 +166,8 @@ void main() {
 	}
 
 	// --- GAUSSIAN PROJECTION ---
-	float splat_time = time - splat.time;
-	float time_factor = ease_out_cubic(clamp(splat_time, 0, 1));
-	float time_factor_late = ease_out_cubic(clamp(splat_time - 0.35, 0, 1));
-
-	float splat_opacity = splat.opacity * time_factor_late*time_factor_late;
-	float splat_scale = model_scale * mix(2.0, 1.0, time_factor_late);
+	float splat_opacity = splat.opacity;
+	float splat_scale = model_scale;
 
 	const vec3 covariance = project_covariance(DECODE_COVARIANCE(splat.covariance), splat_scale, view_pos.xyz, dims);
 	float det = covariance.x*covariance.z - covariance.y*covariance.y;
@@ -187,7 +178,7 @@ void main() {
 	if (any(lessThan(eigenvalues, vec2(0)))) return;
 
 	vec3 ndc_pos = clip_pos.xyz / clip_pos.w;
-	vec2 image_pos = ((ndc_pos.xy + 1.0)*0.5 - vec2(1,0.75)*(1.0 - time_factor)) * (dims - 1);
+	vec2 image_pos = (ndc_pos.xy + 1.0)*0.5 * (dims - 1);
 
 	// We bias the radius (w/ base=2.5x standard deviation) such that low opacity splats cover
 	// fewer screen tiles. This has the effect of making the image *slightly* brighter while
